@@ -1,0 +1,534 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.WebsocketClient = exports.PUBLIC_WS_KEYS = exports.WS_LOGGER_CATEGORY = void 0;
+const BaseWSClient_js_1 = require("./lib/BaseWSClient.js");
+const jwtNode_js_1 = require("./lib/jwtNode.js");
+const misc_util_js_1 = require("./lib/misc-util.js");
+const typeGuards_js_1 = require("./lib/websocket/typeGuards.js");
+const websocket_util_js_1 = require("./lib/websocket/websocket-util.js");
+exports.WS_LOGGER_CATEGORY = { category: 'coinbase-ws' };
+/**
+ * Any WS keys in this list will trigger automatic auth as required, if credentials are available
+ */
+const PRIVATE_WS_KEYS = [
+    // Account data (fills), requires auth.
+    websocket_util_js_1.WS_KEY_MAP.advTradeUserData,
+    // Coinbase Direct Market Data has direct access to Coinbase Exchange servers and requires auth.
+    websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData,
+    // The INTX feed always requires auth.
+    websocket_util_js_1.WS_KEY_MAP.internationalMarketData,
+    // The Prime feed always requires auth.
+    websocket_util_js_1.WS_KEY_MAP.primeMarketData,
+];
+/**
+ * Any WS keys in this list will ALWAYS skip the authentication process, even if credentials are available
+ */
+exports.PUBLIC_WS_KEYS = [
+    websocket_util_js_1.WS_KEY_MAP.advTradeMarketData,
+    websocket_util_js_1.WS_KEY_MAP.exchangeMarketData,
+];
+class WebsocketClient extends BaseWSClient_js_1.BaseWebsocketClient {
+    /**
+     * Request connection of all dependent (public & private) websockets, instead of waiting for automatic connection by library
+     */
+    connectAll() {
+        return Promise.all([
+            this.connect(websocket_util_js_1.WS_KEY_MAP.advTradeMarketData),
+            this.connect(websocket_util_js_1.WS_KEY_MAP.advTradeUserData),
+            this.connect(websocket_util_js_1.WS_KEY_MAP.exchangeMarketData),
+            this.connect(websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData),
+            this.connect(websocket_util_js_1.WS_KEY_MAP.internationalMarketData),
+            this.connect(websocket_util_js_1.WS_KEY_MAP.primeMarketData),
+        ]);
+    }
+    /**
+     * Request subscription to one or more topics. Pass topics as either an array of strings, or array of objects (if the topic has parameters).
+     * Objects should be formatted as {topic: string, params: object}.
+     *
+     * - Subscriptions are automatically routed to the correct websocket connection.
+     * - Authentication/connection is automatic.
+     * - Resubscribe after network issues is automatic.
+     *
+     * Call `unsubscribe(topics)` to remove topics
+     */
+    subscribe(requests, wsKey) {
+        if (!Array.isArray(requests)) {
+            this.subscribeTopicsForWsKey([requests], wsKey);
+            return;
+        }
+        if (requests.length) {
+            this.subscribeTopicsForWsKey(requests, wsKey);
+        }
+    }
+    /**
+     * Unsubscribe from one or more topics. Similar to subscribe() but in reverse.
+     *
+     * - Requests are automatically routed to the correct websocket connection.
+     * - These topics will be removed from the topic cache, so they won't be subscribed to again.
+     */
+    unsubscribe(requests, wsKey) {
+        if (!Array.isArray(requests)) {
+            this.unsubscribeTopicsForWsKey([requests], wsKey);
+            return;
+        }
+        if (requests.length) {
+            this.unsubscribeTopicsForWsKey(requests, wsKey);
+        }
+    }
+    async sendWSAPIRequest(wsKey, channel, params) {
+        this.logger.trace(`sendWSAPIRequest(): assert "${wsKey}" is connected`, {
+            channel,
+            params,
+        });
+        return;
+    }
+    /**
+     *
+     * Internal methods
+     *
+     */
+    /**
+     * Return a websocket URL, which is connected to as-is.
+     * If a token or anything else is needed in the URL, this is a good place to add it.
+     */
+    async getWsUrl(wsKey) {
+        if (this.options.wsUrl) {
+            return this.options.wsUrl;
+        }
+        const useSandbox = this.options.useSandbox;
+        const networkKey = useSandbox ? 'testnet' : 'livenet';
+        const baseUrl = websocket_util_js_1.WS_URL_MAP[wsKey][networkKey];
+        return baseUrl;
+    }
+    sendPingEvent(wsKey) {
+        const wsState = this.getWsStore().get(wsKey);
+        const ws = wsState?.ws;
+        ws?.ping();
+    }
+    sendPongEvent(wsKey) {
+        try {
+            this.logger.trace(`Sending upstream ws PONG: `, {
+                ...exports.WS_LOGGER_CATEGORY,
+                wsMessage: 'PONG',
+                wsKey,
+            });
+            if (!wsKey) {
+                throw new Error('Cannot send PONG, no wsKey provided');
+            }
+            const wsState = this.getWsStore().get(wsKey);
+            if (!wsState || !wsState?.ws) {
+                throw new Error(`Cannot send pong, ${wsKey} socket not connected yet`);
+            }
+            // Send a protocol layer pong
+            wsState.ws.pong();
+        }
+        catch (e) {
+            this.logger.error(`Failed to send WS PONG`, {
+                ...exports.WS_LOGGER_CATEGORY,
+                wsMessage: 'PONG',
+                wsKey,
+                exception: e,
+            });
+        }
+    }
+    isWsPing(msg) {
+        if (msg?.data === 'ping') {
+            return true;
+        }
+        return false;
+    }
+    isWsPong(msg) {
+        if (msg?.data?.includes('pong')) {
+            return true;
+        }
+        // this.logger.info(`Not a pong: `, msg);
+        return false;
+    }
+    resolveEmittableEvents(wsKey, event) {
+        const results = [];
+        try {
+            const parsed = JSON.parse(event.data);
+            const responseEvents = ['subscriptions'];
+            // E.g. {"type":"error","message":"rate limit exceeded","wsKey":"advTradeMarketData"}
+            if ((0, typeGuards_js_1.isCBAdvancedTradeErrorEvent)(parsed)) {
+                return [{ eventType: 'exception', event: parsed }];
+            }
+            // Parse Advanced Trade WS events (update & response)
+            if ((0, typeGuards_js_1.isCBAdvancedTradeWSEvent)(parsed)) {
+                const eventType = parsed.channel;
+                // These are request/reply pattern events (e.g. after subscribing to topics or authenticating)
+                if (responseEvents.includes(eventType)) {
+                    return [
+                        {
+                            eventType: 'response',
+                            event: parsed,
+                        },
+                    ];
+                }
+                // Generic data for a channel
+                if (typeof eventType === 'string') {
+                    return [
+                        {
+                            eventType: 'update',
+                            event: parsed,
+                        },
+                    ];
+                }
+            }
+            // Parse CB Exchange WS events
+            if ((0, typeGuards_js_1.isCBExchangeWSEvent)(parsed, wsKey)) {
+                const eventType = parsed.type;
+                if (responseEvents.includes(eventType)) {
+                    return [
+                        {
+                            eventType: 'response',
+                            event: parsed,
+                        },
+                    ];
+                }
+                // Generic data for a channel
+                if (typeof eventType === 'string') {
+                    return [
+                        {
+                            eventType: 'update',
+                            event: parsed,
+                        },
+                    ];
+                }
+            }
+            this.logger.error(`!! (${wsKey}) Unhandled non-string event type... Defaulting to "update" channel...` +
+                JSON.stringify(parsed));
+            return [
+                {
+                    eventType: 'update',
+                    event: parsed,
+                },
+            ];
+        }
+        catch (e) {
+            results.push({
+                event: {
+                    message: 'Failed to parse event data due to exception',
+                    exception: e,
+                    eventData: event.data,
+                },
+                eventType: 'exception',
+            });
+            this.logger.error(`Failed to parse event data due to exception: `, {
+                exception: e,
+                eventData: event.data,
+            });
+        }
+        return results;
+    }
+    /**
+     * Determines if a topic is for a private channel, using a hardcoded list of strings
+     */
+    isPrivateTopicRequest(request, wsKey) {
+        return request && PRIVATE_WS_KEYS.includes(wsKey);
+    }
+    getWsKeyForMarket(market, isPrivate) {
+        switch (market) {
+            case 'advancedTrade': {
+                return isPrivate
+                    ? websocket_util_js_1.WS_KEY_MAP.advTradeUserData
+                    : websocket_util_js_1.WS_KEY_MAP.advTradeMarketData;
+            }
+            case 'exchange': {
+                return isPrivate
+                    ? websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData
+                    : websocket_util_js_1.WS_KEY_MAP.exchangeMarketData;
+            }
+            case 'international': {
+                return isPrivate
+                    ? websocket_util_js_1.WS_KEY_MAP.internationalMarketData
+                    : websocket_util_js_1.WS_KEY_MAP.internationalMarketData;
+            }
+            case 'prime': {
+                return isPrivate
+                    ? websocket_util_js_1.WS_KEY_MAP.primeMarketData
+                    : websocket_util_js_1.WS_KEY_MAP.primeMarketData;
+            }
+            default: {
+                throw (0, misc_util_js_1.neverGuard)(market, `Unhandled "market": "${market}"`);
+            }
+        }
+    }
+    getWsMarketForWsKey(wsKey) {
+        switch (wsKey) {
+            case websocket_util_js_1.WS_KEY_MAP.advTradeMarketData:
+            case websocket_util_js_1.WS_KEY_MAP.advTradeUserData: {
+                return 'advancedTrade';
+            }
+            case websocket_util_js_1.WS_KEY_MAP.exchangeMarketData:
+            case websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData: {
+                return 'exchange';
+            }
+            case websocket_util_js_1.WS_KEY_MAP.internationalMarketData: {
+                return 'international';
+            }
+            case websocket_util_js_1.WS_KEY_MAP.primeMarketData: {
+                return 'prime';
+            }
+            default: {
+                throw (0, misc_util_js_1.neverGuard)(wsKey, `Unhandled WsKey: "${wsKey}"`);
+            }
+        }
+    }
+    getPrivateWSKeys() {
+        return PRIVATE_WS_KEYS;
+    }
+    /** Force subscription requests to be sent in smaller batches, if a number is returned */
+    getMaxTopicsPerSubscribeEvent(wsKey) {
+        switch (wsKey) {
+            case websocket_util_js_1.WS_KEY_MAP.advTradeMarketData:
+            case websocket_util_js_1.WS_KEY_MAP.advTradeUserData:
+            // Technically, INTX supports request batching but not with nested parameters, so we'll send one at a time
+            case websocket_util_js_1.WS_KEY_MAP.internationalMarketData:
+                return 1;
+            // Exchange supports request batching, no known limit to max topics per request
+            case websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData:
+            case websocket_util_js_1.WS_KEY_MAP.exchangeMarketData: {
+                return null;
+            }
+            default: {
+                return null;
+            }
+        }
+    }
+    /**
+     * Map one or more topics into fully prepared "subscribe request" events (already stringified and ready to send)
+     */
+    async getWsOperationEventsForTopics(topicRequests, wsKey, operation) {
+        if (!topicRequests.length) {
+            return [];
+        }
+        const apiKey = this.options.apiKey;
+        const apiSecret = this.options.apiSecret;
+        const apiPassphrase = this.options.apiPassphrase;
+        /**
+         * Operations need to be structured in a way that this exchange understands.
+         * Parse the internal format into the format expected by the exchange. One request per operation.
+         */
+        const operationEvents = topicRequests.map((topicRequest) => {
+            switch (wsKey) {
+                case websocket_util_js_1.WS_KEY_MAP.advTradeMarketData:
+                case websocket_util_js_1.WS_KEY_MAP.advTradeUserData: {
+                    const wsRequestEvent = {
+                        type: operation,
+                        channel: topicRequest.topic,
+                        ...topicRequest.payload,
+                    };
+                    return wsRequestEvent;
+                }
+                case websocket_util_js_1.WS_KEY_MAP.exchangeMarketData:
+                case websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData: {
+                    const wsRequestEvent = {
+                        type: operation,
+                        channels: [
+                            topicRequest.payload
+                                ? {
+                                    name: topicRequest.topic,
+                                    ...topicRequest.payload,
+                                }
+                                : topicRequest.topic,
+                        ],
+                    };
+                    return wsRequestEvent;
+                }
+                case websocket_util_js_1.WS_KEY_MAP.internationalMarketData: {
+                    // In case there's ever more operation types than "subscribe" and "unsubscribe"
+                    if (!['subscribe', 'unsubscribe'].includes(operation)) {
+                        throw new Error(`Unhandled request operation type for CB International WS: "${operation}"`);
+                    }
+                    const wsRequestEvent = {
+                        type: operation === 'subscribe' ? 'SUBSCRIBE' : 'UNSUBSCRIBE',
+                        // As of Sep 2024, parameters (such as product_id[]) cannot be nested with the channels array
+                        channels: [topicRequest.topic],
+                        // This merges parametrs (such as product_id[]) into the top level request object
+                        ...topicRequest.payload,
+                    };
+                    return wsRequestEvent;
+                }
+                case websocket_util_js_1.WS_KEY_MAP.primeMarketData: {
+                    const wsRequestEvent = {
+                        type: operation,
+                        channel: topicRequest.topic,
+                        ...topicRequest.payload,
+                    };
+                    return wsRequestEvent;
+                }
+                default: {
+                    throw new Error(`Not implemented for "${wsKey}" yet - if you need Prime or INTX, please get in touch.`);
+                }
+            }
+        });
+        const maxTopicsPerEvent = this.getMaxTopicsPerSubscribeEvent(wsKey);
+        const isPrivateChannel = PRIVATE_WS_KEYS.includes(wsKey);
+        /**
+         * - Merge commands into one if the exchange supports batch requests,
+         * - Apply auth/sign, if needed,
+         * - Apply any final formatting to return a string array, ready to be sent upstream.
+         */
+        switch (wsKey) {
+            case websocket_util_js_1.WS_KEY_MAP.advTradeMarketData:
+            case websocket_util_js_1.WS_KEY_MAP.advTradeUserData: {
+                // Events that are ready to send (usually stringified JSON)
+                // ADV trade only supports sending one at a time, so we don't try to merge them
+                // These are already signed, if needed.
+                return operationEvents.map((evt) => {
+                    if (!isPrivateChannel) {
+                        return JSON.stringify(evt);
+                    }
+                    if (!apiKey || !apiSecret) {
+                        throw new Error(`"options.apiKey" (api key name) and/or "options.apiSecret" missing, unable to generate JWT`);
+                    }
+                    const jwtExpiresSeconds = this.options.jwtExpiresSeconds || 120;
+                    const timestamp = Date.now();
+                    /**
+                     * No batching is supported for this product group, so we can already
+                     * handle sign here and return it as is
+                     */
+                    const sign = (0, jwtNode_js_1.signWSJWT)({
+                        algorithm: 'ES256',
+                        timestampMs: timestamp,
+                        jwtExpiresSeconds,
+                        apiPubKey: apiKey,
+                        apiPrivKey: apiSecret,
+                    });
+                    const operationEventWithSign = {
+                        ...evt,
+                        jwt: sign,
+                    };
+                    return JSON.stringify(operationEventWithSign);
+                });
+            }
+            case websocket_util_js_1.WS_KEY_MAP.exchangeMarketData:
+            case websocket_util_js_1.WS_KEY_MAP.exchangeDirectMarketData: {
+                if (!operationEvents.every((evt) => (0, typeGuards_js_1.isCBExchangeWSRequestOperation)(evt, wsKey))) {
+                    // Don't expect this to ever happen, but just to please typescript...
+                    throw new Error(`Unexpected request schema for exchange WS request builder`);
+                }
+                const mergedOperationEvents = (0, websocket_util_js_1.getMergedCBExchangeWSRequestOperations)(operationEvents);
+                // We're under the max topics per request limit.
+                // Send operation requests as one merged request
+                if (!maxTopicsPerEvent ||
+                    mergedOperationEvents.channels.length <= maxTopicsPerEvent) {
+                    if (!isPrivateChannel) {
+                        return [JSON.stringify(mergedOperationEvents)];
+                    }
+                    if (!apiKey || !apiSecret || !apiPassphrase) {
+                        throw new Error(`One or more of apiKey, apiSecret and/or apiPassphrase are missing. These must be provided to use private channels.`);
+                    }
+                    const { sign, timestampInSeconds } = await (0, websocket_util_js_1.getCBExchangeWSSign)(apiSecret);
+                    const mergedOperationEventsWithSign = {
+                        ...mergedOperationEvents,
+                        signature: sign,
+                        key: apiKey,
+                        passphrase: apiPassphrase,
+                        timestamp: timestampInSeconds,
+                    };
+                    return [JSON.stringify(mergedOperationEventsWithSign)];
+                }
+                // We're over the max topics per request limit. Break into batches.
+                const finalOperations = [];
+                for (let i = 0; i < mergedOperationEvents.channels.length; i += maxTopicsPerEvent) {
+                    const batchChannels = mergedOperationEvents.channels.slice(i, i + maxTopicsPerEvent);
+                    const wsRequestEvent = {
+                        type: mergedOperationEvents.type,
+                        channels: [...batchChannels],
+                    };
+                    if (isPrivateChannel) {
+                        if (!apiKey || !apiSecret || !apiPassphrase) {
+                            throw new Error(`One or more of apiKey, apiSecret and/or apiPassphrase are missing. These must be provided to use private channels.`);
+                        }
+                        const { sign, timestampInSeconds } = await (0, websocket_util_js_1.getCBExchangeWSSign)(apiSecret);
+                        const wsRequestEventWithSign = {
+                            ...wsRequestEvent,
+                            signature: sign,
+                            key: apiKey,
+                            passphrase: apiPassphrase,
+                            timestamp: timestampInSeconds,
+                        };
+                        finalOperations.push(JSON.stringify(wsRequestEventWithSign));
+                    }
+                    else {
+                        finalOperations.push(JSON.stringify(wsRequestEvent));
+                    }
+                }
+                return finalOperations;
+            }
+            case websocket_util_js_1.WS_KEY_MAP.internationalMarketData: {
+                if (!operationEvents.every((evt) => (0, typeGuards_js_1.isCBINTXWSRequestOperation)(evt, wsKey))) {
+                    // Don't expect this to ever happen, but just to please typescript...
+                    throw new Error(`Unexpected request schema for exchange WS request builder`);
+                }
+                // We're over the max topics per request limit. Break into batches.
+                const finalOperations = [];
+                for (const operationEvent of operationEvents) {
+                    if (!apiKey || !apiSecret || !apiPassphrase) {
+                        throw new Error(`One or more of apiKey, apiSecret and/or apiPassphrase are missing. These must be provided to use private channels.`);
+                    }
+                    const { sign, timestampInSeconds } = await (0, websocket_util_js_1.getCBInternationalWSSign)(apiKey, apiSecret, apiPassphrase);
+                    const wsRequestEventWithSign = {
+                        ...operationEvent,
+                        time: timestampInSeconds,
+                        key: apiKey,
+                        passphrase: apiPassphrase,
+                        signature: sign,
+                    };
+                    finalOperations.push(JSON.stringify(wsRequestEventWithSign));
+                }
+                // throw new Error(
+                //   'CB INTX is not fully implemented yet - awaiting test environment... if you need this, please get in touch.',
+                // );
+                return finalOperations;
+            }
+            case websocket_util_js_1.WS_KEY_MAP.primeMarketData: {
+                if (!operationEvents.every((evt) => (0, typeGuards_js_1.isCBPrimeWSRequestOperation)(evt, wsKey))) {
+                    // Don't expect this to ever happen, but just to please typescript...
+                    throw new Error(`Unexpected request schema for exchange WS request builder`);
+                }
+                if (!apiKey || !apiSecret || !apiPassphrase) {
+                    throw new Error(`One or more of apiKey, apiSecret and/or apiPassphrase are missing. These must be provided to use private channels.`);
+                }
+                const finalOperations = [];
+                for (const operationEvent of operationEvents) {
+                    const { sign, timestampInSeconds } = await (0, websocket_util_js_1.getCBPrimeWSSign)({
+                        channelName: operationEvent.channel,
+                        svcAccountId: operationEvent.svcAccountId,
+                        portfolioId: operationEvent.portfolio_id,
+                        apiKey,
+                        apiSecret,
+                        product_ids: operationEvent.product_ids,
+                    });
+                    const wsRequestEventWithSign = {
+                        ...operationEvent,
+                        api_key_id: apiKey,
+                        access_key: apiSecret,
+                        passphrase: apiPassphrase,
+                        signature: sign,
+                        timestamp: timestampInSeconds,
+                    };
+                    finalOperations.push(JSON.stringify(wsRequestEventWithSign));
+                }
+                // throw new Error(
+                //   'CB Prime is not fully implemented yet - awaiting test environment... if you need this, please get in touch.',
+                // );
+                return finalOperations;
+            }
+            default: {
+                throw (0, misc_util_js_1.neverGuard)(wsKey, `Not implemented for "${wsKey}" yet`);
+                // throw new Error(`Not implemented for "${wsKey}" yet`);
+            }
+        }
+    }
+    /**
+     * Events are signed per-request, so this function isn't needed for Coinbase.
+     */
+    async getWsAuthRequestEvent(wsKey) {
+        return { wsKey };
+    }
+}
+exports.WebsocketClient = WebsocketClient;
+//# sourceMappingURL=WebsocketClient.js.map

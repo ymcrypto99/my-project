@@ -1,0 +1,20 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { Box } from '@chakra-ui/react';
+import { useAuth } from './contexts/AuthContext';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import Trading from './pages/Trading';
+import Portfolio from './pages/Portfolio';
+import StrategyEditor from './pages/StrategyEditor';
+import DataManagement from './pages/DataManagement';
+import Settings from './pages/Settings';
+import AppLayout from './components/layout/AppLayout';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import ErrorBoundary from './components/common/ErrorBoundary';
+var App = function () {
+    var isAuthenticated = useAuth().isAuthenticated;
+    return (_jsx(ErrorBoundary, { children: _jsx(Box, { minH: "100vh", children: _jsxs(Routes, { children: [_jsx(Route, { path: "/login", element: isAuthenticated ? _jsx(Navigate, { to: "/dashboard", replace: true }) : _jsx(Login, {}) }), _jsx(Route, { path: "/register", element: isAuthenticated ? _jsx(Navigate, { to: "/dashboard", replace: true }) : _jsx(Register, {}) }), _jsxs(Route, { path: "/", element: _jsx(ProtectedRoute, { children: _jsx(AppLayout, {}) }), children: [_jsx(Route, { index: true, element: _jsx(Navigate, { to: "/dashboard", replace: true }) }), _jsx(Route, { path: "dashboard", element: _jsx(Dashboard, {}) }), _jsx(Route, { path: "trading", element: _jsx(Trading, {}) }), _jsx(Route, { path: "portfolio", element: _jsx(Portfolio, {}) }), _jsx(Route, { path: "strategy-editor", element: _jsx(StrategyEditor, {}) }), _jsx(Route, { path: "data-management", element: _jsx(DataManagement, {}) }), _jsx(Route, { path: "settings", element: _jsx(Settings, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/dashboard", replace: true }) })] }) }) }));
+};
+export default App;

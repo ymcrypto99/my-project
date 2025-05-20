@@ -1,0 +1,37 @@
+{"context":"BinanceService","level":"info","message":"Binance service initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.011Z"}
+{"context":"KrakenService","level":"info","message":"Kraken service initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.012Z"}
+{"context":"BitforexService","level":"info","message":"Bitforex service initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.012Z"}
+{"context":"CoinbaseService","level":"info","message":"Coinbase service initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.012Z"}
+{"context":"ExchangeService","level":"info","message":"Exchange service initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.012Z"}
+{"context":"PlatformConfigService","level":"info","message":"Platform config service initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.012Z"}
+{"context":"PlatformConfigController","level":"info","message":"WebSocket server initialized","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.057Z"}
+{"context":"PlatformConfigController","level":"info","message":"Starting Nest application...","param1":"NestFactory","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.060Z"}
+{"context":"PlatformConfigController","level":"info","message":"AppModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"LoggerModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"PassportModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"ConfigHostModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"JwtModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"ConfigModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"ExchangeModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"AuthModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"PlatformConfigModule dependencies initialized","param1":"InstanceLoader","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"subscribe_market_data\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"subscribe_order_book\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"unsubscribe\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.061Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"place_order\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"cancel_order\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"get_balance\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"EventsGateway subscribed to the \"get_open_orders\" message","param1":"WebSocketsController","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"AuthController {/auth}:","param1":"RoutesResolver","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/auth/login, POST} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/auth/register, POST} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/auth/profile, GET} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"PlatformConfigController {/platform-config}:","param1":"RoutesResolver","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/platform-config, GET} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/platform-config/platform, POST} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/platform-config/simulation-mode, POST} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/platform-config/api-keys/:platform, POST} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Mapped {/platform-config/validate-api-keys/:platform, GET} route","param1":"RouterExplorer","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Nest application successfully started","param1":"NestApplication","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
+{"context":"PlatformConfigController","level":"info","message":"Application is running on: http://localhost:3001","service":"crypto-profit-seeker","timestamp":"2025-05-18T11:34:03.062Z"}
